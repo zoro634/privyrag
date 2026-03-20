@@ -1,0 +1,18 @@
+# Python caches and environments
+__pycache__/
+*.py[cod]
+*$py.class
+venv/
+env/
+.env
+
+# Documents and Vector Stores
+docs/
+chroma_db/
+vector_db/faiss_index/
+vector_db/*.pkl
+vector_db/*.db
+
+# OS specific files
+.DS_Store
+Thumbs.db
