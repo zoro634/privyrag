@@ -7,6 +7,7 @@ from langchain_community.vectorstores import Chroma
 from langchain.chains import create_retrieval_chain
 from langchain.chains.combine_documents import create_stuff_documents_chain
 from langchain_core.prompts import ChatPromptTemplate
+from langchain_core.documents import Document
 
 def get_qa_chain():
     """
@@ -20,18 +21,24 @@ def get_qa_chain():
     if not pdf_files:
         raise FileNotFoundError(f"No PDF files found in '{docs_dir}' directory.")
     
-    # Load all PDFs
-    documents = []
+    # Load all PDFs and process chunks
+    splits = []
     for pdf_file in pdf_files:
         loader = PyMuPDFLoader(pdf_file)
-        documents.extend(loader.load())
+        raw_docs = loader.load()
+        full_text = "\n".join([doc.page_content for doc in raw_docs])
         
-    # Split text into chunks of size 500 with overlap 50
-    text_splitter = RecursiveCharacterTextSplitter(
-        chunk_size=500,
-        chunk_overlap=50
-    )
-    splits = text_splitter.split_documents(documents)
+        # Detect short documents and don't chunk them at all
+        if len(full_text) < 3000:
+            metadata = raw_docs[0].metadata if raw_docs else {}
+            splits.append(Document(page_content=full_text, metadata=metadata))
+        else:
+            # Normal chunking for larger documents
+            text_splitter = RecursiveCharacterTextSplitter(
+                chunk_size=500,
+                chunk_overlap=50
+            )
+            splits.extend(text_splitter.split_documents(raw_docs))
     
     # Generate embeddings using OllamaEmbeddings with model nomic-embed-text
     embeddings = OllamaEmbeddings(model="nomic-embed-text")
@@ -44,15 +51,17 @@ def get_qa_chain():
         collection_name="privy_rag_store"
     )
     
-    # Build a retriever that fetches the top 4 chunks
-    retriever = vectorstore.as_retriever(search_kwargs={"k": 4})
+    # Build a retriever that fetches dynamically based on chunk count
+    total_chunks = len(splits)
+    k = total_chunks if total_chunks <= 10 else 5
+    retriever = vectorstore.as_retriever(search_kwargs={"k": k})
     
     # Configure the system Prompt exactly as requested
     system_prompt = (
         "You are a private, secure document assistant. "
-        "Answer only based on the provided document context. "
-        "If the answer is not in the document, say 'I could not find this in the provided documents.' "
-        "Do not use any outside knowledge.\n\n"
+        "Answer based on the document context provided. "
+        "If the exact answer is not stated, you may make reasonable inferences directly supported by the document content, but clearly state you are inferring. "
+        "Only say 'I could not find this in the provided documents.' if the topic is completely absent from the document.\n\n"
         "Context:\n{context}"
     )
     

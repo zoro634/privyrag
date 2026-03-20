@@ -52,6 +52,11 @@ def build_dynamic_chain(selected_docs: list[str]):
     if selected_docs:
         search_kwargs["filter"] = lambda metadata: any(sd in str(metadata.get("source", "")) for sd in selected_docs)
         
+        # Document length awareness - dynamic k for short documents
+        doc_chunk_count = sum(1 for d in vs.docstore._dict.values() if any(sd in str(d.metadata.get("source", "")) for sd in selected_docs))
+        if doc_chunk_count > 0:
+            search_kwargs["k"] = doc_chunk_count if doc_chunk_count <= 10 else max(5, TOP_K * 2)
+        
     faiss_retriever = vs.as_retriever(search_kwargs=search_kwargs)
     ensemble = EnsembleRetriever(retrievers=[faiss_retriever, bm25], weights=[0.5, 0.5])
     
@@ -61,8 +66,9 @@ def build_dynamic_chain(selected_docs: list[str]):
     llm = get_llm()
     system_prompt = (
         "You are a private, secure document assistant. "
-        "Answer only based on the provided document context. "
-        "If the answer is not in the document, say 'I could not find this in the provided documents.' "
+        "Answer based on the document context provided. "
+        "If the exact answer is not stated, you may make reasonable inferences directly supported by the document content, but clearly state you are inferring. "
+        "Only say 'I could not find this in the provided documents.' if the topic is completely absent from the document.\n"
         "Do not use any outside knowledge.\n"
         "IMPORTANT: You must include inline citations in your answer! Whenever you state a fact from the context, append the source filename in brackets (e.g., [document.pdf]).\n\n"
         "Context:\n{context}"

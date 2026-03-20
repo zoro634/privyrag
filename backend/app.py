@@ -1,13 +1,16 @@
-from fastapi import FastAPI, UploadFile, File, HTTPException
+from fastapi import FastAPI, UploadFile, File, Form, HTTPException
 from pydantic import BaseModel
 import os
 import shutil
+import json
 from config.settings import DOCS_DIR
 from document_processing.parser import parse_documents
 from document_processing.chunker import chunk_documents
 from document_processing.insight_engine import extract_insights
 from rag_pipeline.orchestrator import answer_query, preload_caches, clear_global_caches
 from rag_pipeline.comparator import compare_documents
+
+METADATA_FILE = os.path.join(DOCS_DIR, "metadata.json")
 
 app = FastAPI(title="PrivyRAG API")
 
@@ -31,19 +34,40 @@ def startup_event():
         print("No index found or failed to load on startup:", e)
 
 @app.post("/upload")
-async def upload_file(file: UploadFile = File(...)):
+async def upload_file(file: UploadFile = File(...), doc_type: str = Form("General")):
     file_path = os.path.join(DOCS_DIR, file.filename)
     
     with open(file_path, "wb") as buffer:
         shutil.copyfileobj(file.file, buffer)
         
     try:
-        docs = parse_documents(str(DOCS_DIR))
-        chunks = chunk_documents(docs)
+        # Update metadata.json
+        if not os.path.exists(DOCS_DIR):
+            os.makedirs(DOCS_DIR)
+            
+        metadata = {}
+        if os.path.exists(METADATA_FILE):
+            with open(METADATA_FILE, "r") as f:
+                try:
+                    metadata = json.load(f)
+                except json.JSONDecodeError:
+                    pass
+                    
+        metadata[file.filename] = {"type": doc_type}
+        
+        with open(METADATA_FILE, "w") as f:
+            json.dump(metadata, f, indent=4)
+            
+        from document_processing.parser import parse_document, parse_documents
+        new_docs = parse_document(file_path)
+        new_chunks = chunk_documents(new_docs)
+        
+        all_docs = parse_documents(str(DOCS_DIR))
+        all_chunks = chunk_documents(all_docs)
         
         from rag_pipeline.retriever import get_hybrid_retriever
         from rag_pipeline.llm import get_embeddings
-        get_hybrid_retriever(chunks, get_embeddings())
+        get_hybrid_retriever(new_documents=new_chunks, all_documents=all_chunks, embeddings=get_embeddings())
         
         clear_global_caches()
         
@@ -101,4 +125,21 @@ async def insights(request: InsightRequest):
 async def list_files():
     if not os.path.exists(DOCS_DIR):
         return {"files": []}
-    return {"files": os.listdir(DOCS_DIR)}
+        
+    # Read metadata if it exists
+    metadata = {}
+    if os.path.exists(METADATA_FILE):
+        with open(METADATA_FILE, "r") as f:
+            try:
+                metadata = json.load(f)
+            except json.JSONDecodeError:
+                pass
+                
+    files = []
+    for f in os.listdir(DOCS_DIR):
+        if f == "metadata.json" or f.startswith("."):
+            continue
+        doc_type = metadata.get(f, {}).get("type", "General")
+        files.append({"name": f, "type": doc_type})
+        
+    return {"files": files}

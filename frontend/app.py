@@ -81,6 +81,7 @@ button[kind="primary"] { background-color: #4f8ef7; color: white; border: none; 
 """, unsafe_allow_html=True)
 
 # --- Core Logic ---
+@st.cache_data(ttl=5)
 def fetch_files():
     try:
         res = requests.get(f"{API_URL}/files")
@@ -96,11 +97,13 @@ available_files = fetch_files()
 with st.sidebar:
     st.markdown("<br>", unsafe_allow_html=True)
     uploaded_file = st.file_uploader("Drop your document here", type=["pdf", "docx", "txt", "md"])
+    doc_type = st.selectbox("Document Type", ["General", "Legal", "Medical", "Financial", "Technical", "HR"])
     if st.button("Upload & Process", type="primary"):
         if uploaded_file:
             with st.spinner("Processing..."):
                 files = {"file": (uploaded_file.name, uploaded_file.getvalue())}
-                res = requests.post(f"{API_URL}/upload", files=files)
+                data = {"doc_type": doc_type}
+                res = requests.post(f"{API_URL}/upload", files=files, data=data)
                 if res.status_code == 200:
                     st.success("Indexed successfully!")
                     st.rerun()
@@ -108,13 +111,15 @@ with st.sidebar:
                     st.error("Failed to upload.")
                     
     st.markdown("<br><div style='font-family: JetBrains Mono; font-size: 0.7rem; color: #888; letter-spacing: 1px;'>DOCUMENTS</div>", unsafe_allow_html=True)
-    for f in available_files:
+    for f_obj in available_files:
+        f = f_obj if isinstance(f_obj, str) else f_obj.get("name", "Unknown")
+        d_type = f_obj.get("type", "General") if isinstance(f_obj, dict) else "General"
         icon = "📕" if f.endswith(".pdf") else "📘" if f.endswith(".docx") else "📄"
         st.markdown(f"""
         <div class="doc-card">
             <div style="display: flex; align-items: center;">
                 <div class="doc-icon">{icon}</div>
-                <div><div class="doc-title">{f}</div><div class="doc-meta">Indexed & Ready</div></div>
+                <div><div class="doc-title">{f}</div><div class="doc-meta">Type: {d_type}</div></div>
             </div>
             <div class="status-dot"></div>
         </div>
@@ -132,11 +137,13 @@ with st.sidebar:
 tab1, tab2, tab3 = st.tabs(["Chat", "Insights", "Compare"])
 
 with tab1:
+    file_names = [f["name"] if isinstance(f, dict) else f for f in available_files]
+    
     if not available_files:
         st.markdown("<div style='color: #888; font-size: 0.9rem;'>No documents selected. Please upload a document to begin.</div>", unsafe_allow_html=True)
         selected_chat_docs = []
     else:
-        selected_chat_docs = st.multiselect("Select documents to chat with:", available_files, default=available_files, label_visibility="collapsed")
+        selected_chat_docs = st.multiselect("Select documents to chat with:", file_names, default=file_names, label_visibility="collapsed")
         docs_html = " · ".join([f"📄 {f}" for f in selected_chat_docs]) if selected_chat_docs else "None"
         st.markdown(f"<div style='background:rgba(79, 142, 247, 0.1); padding:5px 12px; border-radius:12px; display:inline-block; font-size:0.8rem; border:1px solid rgba(79, 142, 247, 0.3); color:#4f8ef7; margin-bottom:20px;'>Active: {docs_html}</div>", unsafe_allow_html=True)
         
@@ -167,7 +174,7 @@ with tab1:
 
 with tab2:
     if available_files:
-        selected_file = st.selectbox("Select document for insights:", available_files, label_visibility="collapsed")
+        selected_file = st.selectbox("Select document for insights:", file_names, label_visibility="collapsed")
         cA, cB = st.columns(2)
         if cA.button("Generate Summary"):
             with st.spinner("Generating..."):
@@ -185,8 +192,8 @@ with tab2:
 with tab3:
     if len(available_files) >= 2:
         cA, cB = st.columns(2)
-        doc1 = cA.selectbox("Left Document", available_files, key="c1", label_visibility="collapsed")
-        doc2 = cB.selectbox("Right Document", available_files, key="c2", label_visibility="collapsed")
+        doc1 = cA.selectbox("Left Document", file_names, key="c1", label_visibility="collapsed")
+        doc2 = cB.selectbox("Right Document", file_names, key="c2", label_visibility="collapsed")
         if st.button("Compare Documents", type="primary"):
             with st.spinner("Comparing..."):
                 res = requests.post(f"{API_URL}/compare", json={"doc1": doc1, "doc2": doc2})

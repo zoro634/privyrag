@@ -9,21 +9,22 @@ from config.settings import TOP_K, DB_DIR
 
 BM25_PATH = os.path.join(DB_DIR, "bm25.pkl")
 
-def get_hybrid_retriever(documents: list[Document] = None, embeddings: Embeddings = None):
+def get_hybrid_retriever(new_documents: list[Document] = None, all_documents: list[Document] = None, embeddings: Embeddings = None):
     """
     Creates an EnsembleRetriever combining FAISS (semantic) and BM25 (keyword) search.
-    If documents are provided, builds and saves indexes. If not, loads from disk.
+    If new_documents are provided, builds or appends to FAISS index. 
+    If all_documents are provided, rebuilds BM25 index.
     """
     # Initialize FAISS Retriever
-    faiss_vectorstore = get_vector_store(documents, embeddings)
+    faiss_vectorstore = get_vector_store(new_documents, embeddings)
     faiss_retriever = faiss_vectorstore.as_retriever(search_kwargs={"k": TOP_K})
     
     # Initialize BM25 Retriever
-    if os.path.exists(BM25_PATH) and documents is None:
+    if os.path.exists(BM25_PATH) and all_documents is None:
         with open(BM25_PATH, 'rb') as f:
             bm25_retriever = pickle.load(f)
-    elif documents:
-        bm25_retriever = BM25Retriever.from_documents(documents)
+    elif all_documents:
+        bm25_retriever = BM25Retriever.from_documents(all_documents)
         with open(BM25_PATH, 'wb') as f:
             pickle.dump(bm25_retriever, f)
     else:
