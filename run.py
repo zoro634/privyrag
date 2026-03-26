@@ -24,11 +24,12 @@ def main():
     # Give backend a moment to start
     time.sleep(3)
     
-    # 2. Start Streamlit frontend
-    print(f"Starting Streamlit Frontend...")
+    # 2. Start Next.js frontend
+    print(f"Starting Next.js Frontend on port 3000...")
     frontend_process = subprocess.Popen(
-        [python_exec, "-m", "streamlit", "run", "frontend/app.py"],
-        cwd=base_dir
+        ["npm", "run", "dev"],
+        cwd=str(base_dir.parent / "privyrag-frontend"),
+        shell=True
     )
     
     try:

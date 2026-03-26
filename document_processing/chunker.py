@@ -12,15 +12,15 @@ def chunk_documents(documents: list[Document], chunk_size: int = CHUNK_SIZE, chu
     if not documents:
         return []
         
-    full_text = "\n".join([doc.page_content for doc in documents])
-    # Detect short documents and don't chunk them at all
-    if len(full_text) < 3000:
-        # Don't chunk — treat entire document as one chunk
-        metadata = documents[0].metadata if documents else {}
-        return [Document(page_content=full_text, metadata=metadata)]
-        
     text_splitter = RecursiveCharacterTextSplitter(
         chunk_size=chunk_size,
         chunk_overlap=chunk_overlap
     )
-    return text_splitter.split_documents(documents)
+    final_chunks = []
+    for doc in documents:
+        if len(doc.page_content) <= chunk_size:
+            final_chunks.append(doc)
+        else:
+            final_chunks.extend(text_splitter.split_documents([doc]))
+            
+    return final_chunks

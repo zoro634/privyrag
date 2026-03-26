@@ -1,7 +1,7 @@
 import os
 import shutil
 from typing import List, Dict, Any, Optional
-from fastapi import APIRouter, UploadFile, File, Form, BackgroundTasks
+from fastapi import APIRouter, UploadFile, File, Form, BackgroundTasks, HTTPException
 from pydantic import BaseModel
 
 from config.settings import settings
@@ -37,9 +37,15 @@ class CompareRequest(BaseModel):
     doc2: str
     query: str
 
+ALLOWED_EXTENSIONS = {".pdf", ".docx", ".doc", ".txt", ".md", ".csv", ".xlsx"}
+
 @router.post("/upload")
 async def upload_document(background_tasks: BackgroundTasks, file: UploadFile = File(...)):
     """Uploads a document to the local disk and triggers processing asynchronously."""
+    ext = os.path.splitext(file.filename)[1].lower()
+    if ext not in ALLOWED_EXTENSIONS:
+        raise HTTPException(status_code=400, detail=f"File extension {ext} not allowed.")
+        
     file_path = settings.UPLOAD_DIR / file.filename
     with open(file_path, "wb") as buffer:
         shutil.copyfileobj(file.file, buffer)
